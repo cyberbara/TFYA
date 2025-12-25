@@ -1,1 +1,10 @@
-{ read(x); sum as 10H; /* comment */ if x > 5 then write(sum); }
+{
+  read(n);
+  sum as 0;
+  while n > 0
+  {
+    sum as sum + n;
+    n as n - 1;
+  };
+  write(sum);
+}
