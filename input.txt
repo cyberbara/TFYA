@@ -1,10 +1,11 @@
 {
+  /* Это комментарий, который никогда не кончится...
   read(n);
   sum as 0;
-  while n > 0
+  while n > 0 do
   {
     sum as sum + n;
-    n as n - 1;
+    n as n - 1e - 502;
   };
   write(sum);
 }

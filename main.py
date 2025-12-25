@@ -1,228 +1,250 @@
 import os
 import sys
 
+# Таблица TW (Table of Words) - зарезервированные слова нашего языка
+# Каждое слово имеет свой индекс (номер). Пустая строка под номером 0.
 TW = ["", "read", "write", "if", "then", "else", "for", "to", "while", "do", "true", "false", "or", "and", "not", "as"]
+
+# Таблица TL (Table of Limiters) - знаки препинания и математические символы
+# Например, индекс 1 - это '{', индекс 13 - это '+'
 TL = ["", "{", "}", "%", "!", "$", ",", ";", "[", "]", ":", "(", ")", "+", "-", "*", "/", "=", "<>", ">", "<", "<=",
       ">=", "/*"]
 
+# Сюда мы будем записывать переменные, которые придумает программист (например, x, sum, n)
 mTI = []
+# Сюда будем записывать все числа, которые встретим в коде (10, 3.14, 101B)
 mTN = []
 
 
 class FullAnalyzer:
     def __init__(self, content):
-        self.content = content
-        self.pos = 0
-        self.ch = ''
-        self.stack = ""
-        self.tokens = []
-        self.t_pos = 0
-        self.cur = (0, 0)
+        self.content = content  # Храним исходный текст программы
+        self.pos = 0  # Текущая позиция (номер буквы), которую мы читаем
+        self.ch = ''  # Текущий символ (буква), который мы сейчас изучаем
+        self.stack = ""  # "Мешочек" для накопления букв (собираем из них слова)
+        self.tokens = []  # Список кодов (тип, индекс) для работы парсера
+        self.t_pos = 0  # Номер текущего токена для синтаксического анализа
+        self.cur = (0, 0)  # Текущий токен, на который смотрит парсер
 
+    # Функция 'gc' (Get Character) - берет следующую букву из текста
     def gc(self):
         if self.pos < len(self.content):
             self.ch = self.content[self.pos]
             self.pos += 1
         else:
-            self.ch = '\0'
+            self.ch = '\0'  # Если текст кончился, возвращаем "пустой символ"
 
+    # Функция для вывода ошибок - сразу останавливает программу
     def error(self, msg):
-        print(f"\n[ОШИБКА]: {msg}")
+        print(f"\n🛑 ОШИБКА: {msg}")
         sys.exit(1)
 
+    # Функция добавления токена - делает "красивый" и "цифровой" вывод одновременно
+    def add_token(self, t_type, t_index, value=None):
+        # t_type: 1-Слово, 2-Знак, 3-Число, 4-Имя переменной
+        self.tokens.append((t_type, t_index))
+
+        # Определяем текстовое описание типа
+        type_names = {1: "СЛОВО (TW)", 2: "ЗНАК (TL)", 3: "ЧИСЛО (mTN)", 4: "ПЕРЕМЕННАЯ (mTI)"}
+        t_name = type_names.get(t_type, "???")
+
+        # Находим само значение (слово или знак) из таблиц по индексу
+        if t_type == 1:
+            display_val = TW[t_index]
+        elif t_type == 2:
+            display_val = TL[t_index]
+        else:
+            display_val = value  # Для чисел и переменных берем само значение
+
+        # Выводим в консоль вообще всё: Тип, Коды и Значение
+        print(f"[{t_name}] Тип: {t_type}, Индекс: {t_index} | Значение: '{display_val}'")
+
+    # === ЛЕКСИЧЕСКИЙ АНАЛИЗАТОР (СКАНЕР) ===
+    # Его работа: превратить текст в список токенов
     def scan(self):
-        state = "H"
+        state = "H"  # H - это "начальное состояние" (ждём символ)
         self.gc()
         while True:
             if state == "H":
-                while self.ch.isspace(): self.gc()
-                if self.ch == '\0': break
-                self.stack = ""
+                while self.ch.isspace(): self.gc()  # Пропускаем пробелы
+                if self.ch == '\0': break  # Если всё прочитали - выходим
+                self.stack = ""  # Очищаем мешочек для нового слова
 
-                if self.ch.isalpha():
+                if self.ch.isalpha():  # Если это буква - начинаем собирать Идентификатор
                     self.stack += self.ch;
                     self.gc();
                     state = "I"
-                elif self.ch.isdigit():
+                elif self.ch.isdigit():  # Если это цифра - начинаем собирать Число
                     self.stack += self.ch;
                     self.gc();
                     state = "N"
-                elif self.ch == '/':
+                elif self.ch == '/':  # Если слэш - это может быть деление или комментарий
                     self.gc();
                     state = "C1"
-                elif self.ch == '<':
+                elif self.ch == '<':  # Проверка знаков сравнения
                     self.gc();
                     state = "M1"
                 elif self.ch == '>':
                     self.gc();
                     state = "M2"
-                elif self.ch in "{}().,;=+-*":
-                    if self.ch == '{':
-                        self.tokens.append((2, 1))
-                    elif self.ch == '}':
-                        self.tokens.append((2, 2))
-                    elif self.ch == '(':
-                        self.tokens.append((2, 11))
-                    elif self.ch == ')':
-                        self.tokens.append((2, 12))
-                    elif self.ch == ';':
-                        self.tokens.append((2, 7))
-                    elif self.ch == '+':
-                        self.tokens.append((2, 13))
-                    elif self.ch == '-':
-                        self.tokens.append((2, 14))
-                    elif self.ch == '*':
-                        self.tokens.append((2, 15))
-                    elif self.ch in TL:
-                        self.tokens.append((2, TL.index(self.ch)))
+                elif self.ch in "{}().,;=+-*":  # Одиночные знаки
+                    if self.ch in TL:
+                        self.add_token(2, TL.index(self.ch))
                     self.gc()
                 else:
-                    state = "OG"
+                    self.error(f"Непонятный символ: {self.ch}")
 
-            elif state == "I":
+            elif state == "I":  # Собираем слово (буквы + цифры)
                 while self.ch.isalnum():
                     self.stack += self.ch;
                     self.gc()
-                if self.stack in TW:
-                    self.tokens.append((1, TW.index(self.stack)))
-                else:
+                if self.stack in TW:  # Проверяем, не зарезервировано ли это слово
+                    self.add_token(1, TW.index(self.stack))
+                else:  # Если нет - это новая переменная
                     if self.stack not in mTI: mTI.append(self.stack)
-                    self.tokens.append((4, mTI.index(self.stack) + 1))
+                    self.add_token(4, mTI.index(self.stack) + 1, self.stack)
                 state = "H"
 
-            elif state == "N":
+            elif state == "N":  # Собираем число (поддерживает 101B, 77O, 10AH)
                 while self.ch.isalnum() or self.ch == '.':
                     self.stack += self.ch;
                     self.gc()
                 if self.stack not in mTN: mTN.append(self.stack)
-                self.tokens.append((3, mTN.index(self.stack) + 1))
+                self.add_token(3, mTN.index(self.stack) + 1, self.stack)
                 state = "H"
 
-            elif state == "C1":
+            elif state == "C1":  # Это был слэш. Если за ним *, то это комментарий
                 if self.ch == '*':
                     self.gc(); state = "C2"
                 else:
-                    self.tokens.append((2, 16)); state = "H"
-            elif state == "C2":
+                    self.add_token(2, 16); state = "H"  # Иначе это просто деление /
+            elif state == "C2":  # Внутри комментария, ждем звездочку для выхода
                 while self.ch != '*' and self.ch != '\0': self.gc()
-                if self.ch == '\0': self.error("Незакрытый комментарий")
+                if self.ch == '\0': self.error("Комментарий не закрыт!")
                 self.gc();
                 state = "C3"
-            elif state == "C3":
+            elif state == "C3":  # После звездочки ждем слэш
                 if self.ch == '/':
                     self.gc(); state = "H"
                 else:
-                    state = "C2"
+                    state = "C2"  # Если не слэш, идем обратно в комменты
 
-            elif state == "M1":
+            elif state == "M1":  # Разбор <, <= или <>
                 if self.ch == '>':
-                    self.gc(); self.tokens.append((2, 18))
+                    self.gc(); self.add_token(2, 18)
                 elif self.ch == '=':
-                    self.gc(); self.tokens.append((2, 21))
+                    self.gc(); self.add_token(2, 21)
                 else:
-                    self.tokens.append((2, 20))
+                    self.add_token(2, 20)
                 state = "H"
-            elif state == "M2":
+            elif state == "M2":  # Разбор > или >=
                 if self.ch == '=':
-                    self.gc(); self.tokens.append((2, 22))
+                    self.gc(); self.add_token(2, 22)
                 else:
-                    self.tokens.append((2, 19))
+                    self.add_token(2, 19)
                 state = "H"
 
-            elif state == "OG":
-                self.error(f"Неизвестный символ '{self.ch}'")
+    # === СИНТАКСИЧЕСКИЙ АНАЛИЗАТОР (ПАРСЕР) ===
+    # Проверяет, правильно ли стоят токены (порядок слов)
+    def parse(self):
+        self.t_pos = 0
+        self.get_t()  # Берем самый первый токен
+        self.block()  # Начинаем разбор с правила Блок
+        print("\n🏆 СИНТАКСИС ВЕРНЫЙ: Программа построена правильно.")
 
+    # Взять следующий токен из тех, что нашел сканер
     def get_t(self):
         if self.t_pos < len(self.tokens):
             self.cur = self.tokens[self.t_pos]
             self.t_pos += 1
         else:
-            self.cur = (0, 0)
+            self.cur = (0, 0)  # Сигнал конца
 
+    # Функция "Сопоставление" - проверяет, совпадает ли текущий токен с тем, что мы ждем
     def match(self, t, k):
         if self.cur[0] == t and (k == 0 or self.cur[1] == k):
-            self.get_t()
+            self.get_t()  # Если совпало - идем дальше
         else:
-            exp = TW[k] if t == 1 else (TL[k] if t == 2 else "ID/Num")
-            self.error(f"Ожидал '{exp}', получил {self.cur}")
+            self.error(f"Синтаксическая ошибка! Ждал тип {t} индекс {k}, а встретил {self.cur}")
 
-    def parse(self):
-        self.t_pos = 0
-        self.get_t()
-        self.block()
-        print("\n[УСПЕХ] Синтаксис верный!")
-
+    # Правило БЛОК: { оператор; оператор; }
     def block(self):
-        self.match(2, 1)
+        self.match(2, 1)  # Ждем {
         while self.cur != (2, 2) and self.cur != (0, 0):
-            self.statement()
-            if self.cur == (2, 7):
-                self.get_t()
-        self.match(2, 2)
+            self.statement()  # Разбираем оператор внутри
+            if self.cur == (2, 7): self.get_t()  # Если видим ';', пропускаем его
+        self.match(2, 2)  # Ждем }
 
+    # Правило ОПЕРАТОР: if, while, read, write или присваивание
     def statement(self):
         t, k = self.cur
-        if t == 4:
+        if t == 4:  # Если начинается с переменной - значит это присваивание
             self.get_t()
-            self.match(1, 15)
-            self.expr()
-        elif t == 1:
-            if k == 1:
+            self.match(1, 15)  # Обязательно должно быть слово 'as'
+            self.expr()  # А потом какое-то выражение
+        elif t == 1:  # Ключевые слова
+            if k == 1:  # read(x)
                 self.get_t();
                 self.match(2, 11);
                 self.match(4, 0);
                 self.match(2, 12)
-            elif k == 2:
+            elif k == 2:  # write(выражение)
                 self.get_t();
                 self.match(2, 11);
                 self.expr();
                 self.match(2, 12)
-            elif k == 3:
+            elif k == 3:  # if условие then оператор
                 self.get_t();
                 self.expr();
                 self.match(1, 4);
                 self.statement()
-                if self.cur == (1, 5):
+                if self.cur == (1, 5):  # если есть else
                     self.get_t();
                     self.statement()
-            elif k == 8:
+            elif k == 8:  # while условие do оператор
                 self.get_t();
                 self.expr();
                 self.match(1, 9);
                 self.statement()
-        elif self.cur == (2, 1):
+        elif self.cur == (2, 1):  # Если встретили {, значит это вложенный блок
             self.block()
-        else:
-            self.error(f"Неожиданный токен {self.cur}")
 
+    # Правило ВЫРАЖЕНИЕ: число или переменная, возможно со знаками + - > и т.д.
     def expr(self):
-        self.operand()
-        while self.cur[0] == 2 and (13 <= self.cur[1] <= 22):
-            self.get_t()
-            self.operand()
+        self.operand()  # Должно быть число или имя
+        while self.cur[0] == 2 and (13 <= self.cur[1] <= 22):  # Пока есть знаки операций
+            self.get_t()  # Съедаем знак
+            self.operand()  # Снова ждем число или имя
 
+    # Правило ОПЕРАНД
     def operand(self):
-        if self.cur[0] == 3 or self.cur[0] == 4:
+        if self.cur[0] == 3 or self.cur[0] == 4:  # Либо число, либо переменная
             self.get_t()
         else:
-            self.error(f"Ожидалось число или ID, получено {self.cur}")
+            self.error("В выражении не хватает числа или переменной!")
 
 
+# === ЗАПУСК ===
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        fname = sys.argv[1]
-    else:
-        fname = "input.txt"
+    # Код, который мы проверяем
+    my_code = """
+    {
+      read(n);
+      sum as 0;
+      while n > 0 do
+      {
+        sum as sum + n;
+        n as n - 1;
+      };
+      write(sum);
+    }
+    """
 
-    if os.path.exists(fname):
-        with open(fname, "r", encoding='utf-8') as f:
-            code = f.read()
-    else:
-        print("Файл не найден, использую стандартный тест:")
-        code = "{ read(n); sum as 0; while n > 0 do { sum as sum + n; n as n - 1; }; write(sum); }"
-        print(code)
+    # 1. Запускаем Анализ
+    parser = FullAnalyzer(my_code)
 
-    analyzer = FullAnalyzer(code)
-    analyzer.scan()
-    print(f"Лексемы: {analyzer.tokens}")
-    analyzer.parse()
+    print("--- 🔍 ШАГ 1: ЛЕКСИЧЕСКИЙ АНАЛИЗ ---")
+    parser.scan()
+
+    print("\n--- 🏗️ ШАГ 2: СИНТАКСИЧЕСКИЙ АНАЛИЗ ---")
+    parser.parse()
